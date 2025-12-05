@@ -1,0 +1,6 @@
+{
+  "player.connect": "[green]+ [purple]{0} [green]connected ({1})",
+  "player.disconnect": "[red]- [purple]{0} [red]disconnected ({1})",
+
+  "welcome.message": "[green]Hello [purple]{0}[white], welcome to the server!"
+}
