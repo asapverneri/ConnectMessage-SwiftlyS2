@@ -14,7 +14,7 @@
 
   <ItemGroup>
     <PackageReference Include="MaxMind.GeoIP2" Version="5.4.1" />
-    <PackageReference Include="SwiftlyS2.CS2" Version="1.0.0" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="SwiftlyS2.CS2" Version="1.0.5" ExcludeAssets="runtime" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

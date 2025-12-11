@@ -11,7 +11,7 @@ using SwiftlyS2.Shared.Plugins;
 
 namespace ConnectMessage;
 
-[PluginMetadata(Id = "ConnectMessage", Version = "1.0.0", Name = "ConnectMessage", Author = "verneri", Description = "Connect/disconnect messages")]
+[PluginMetadata(Id = "ConnectMessage", Version = "1.0.1", Name = "ConnectMessage", Author = "verneri", Description = "Connect/disconnect messages")]
 public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
 
     private PluginConfig _config = null!;
@@ -20,8 +20,6 @@ public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
 
     public override void Load(bool hotReload)
     {
-
-        // Config
         const string ConfigFileName = "config.jsonc";
         const string ConfigSection = "ConnectMessage";
         Core.Configuration
@@ -38,16 +36,12 @@ public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
         var provider = services.BuildServiceProvider();
         _config = provider.GetRequiredService<IOptions<PluginConfig>>().Value;
 
-        // Event hooks
         Core.GameEvent.HookPost<EventPlayerConnectFull>(OnPlayerConnectFull);
         Core.GameEvent.HookPost<EventPlayerDisconnect>(OnPlayerDisconnect);
-
-        Core.Logger.LogInformation("Loaded");
     }
 
     public override void Unload() {
 
-        
     }
 
     private HookResult OnPlayerConnectFull(EventPlayerConnectFull @event)
