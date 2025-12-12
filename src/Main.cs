@@ -11,7 +11,7 @@ using SwiftlyS2.Shared.Plugins;
 
 namespace ConnectMessage;
 
-[PluginMetadata(Id = "ConnectMessage", Version = "1.0.1", Name = "ConnectMessage", Author = "verneri", Description = "Connect/disconnect messages")]
+[PluginMetadata(Id = "ConnectMessage", Version = "1.0.2", Name = "ConnectMessage", Author = "verneri", Description = "Connect/disconnect messages")]
 public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
 
     private PluginConfig _config = null!;
@@ -49,7 +49,7 @@ public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
         if (@event == null)
             return HookResult.Continue;
         var player = @event.Accessor.GetPlayer("userid");
-        if (player == null)
+        if (player == null || !player.IsValid)
             return HookResult.Continue;
         var playername = player.Controller.PlayerName;
         string country = GetCountry(player.IPAddress?.Split(":")[0] ?? "Unknown");
@@ -79,7 +79,7 @@ public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
             return HookResult.Continue;
 
         var player = @event.Accessor.GetPlayer("userid");
-        if (player == null)
+        if (player == null || !player.IsValid)
             return HookResult.Continue;
         var playername = player.Controller.PlayerName;
         string country = GetCountry(player.IPAddress?.Split(":")[0] ?? "Unknown");
