@@ -1,6 +1,14 @@
 {
-  "player.connect": "[green]+ [purple]{0} [green]connected ({1})",
-  "player.disconnect": "[red]- [purple]{0} [red]disconnected ({1})",
+  "player.connect": "[green]+ [purple]{0} [white][{1}] [green]connected ({2})",
+  "player.disconnect": "[red]- [purple]{0}[white][{1}] [red]disconnected ({2})",
 
-  "welcome.message": "[green]Hello [purple]{0}[white], welcome to the server!"
+  "welcome.message": "[green]Hello [purple]{0}[white], welcome to the server!",
+
+  "discord.connecttitle": "{0}",
+  "discord.connectdescription": "connected [{0} - {1} - {2}]\n[Steam Profile](https://steamcommunity.com/profiles/{1})",
+
+  "discord.disconnecttitle": "{0}",
+  "discord.disconnectdescription": "disconnected [{0} - {1} - {2}\n[Steam Profile](https://steamcommunity.com/profiles/{1})",
+
+  "discord.footer": "ConnectMessage {0}"
 }

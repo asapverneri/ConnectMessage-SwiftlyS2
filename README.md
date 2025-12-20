@@ -15,8 +15,7 @@
 
 <p>✅ disconnect/disconnect messages</p>
 <p>✅ Welcome message</p>
-<br>
-<p>⬜ Discord logs</p>
+<p>✅ Discord logs</p>
 
 ---
 
@@ -30,7 +29,9 @@
 {
   "ConnectMessage": {
     "WelcomeMessage": true,
-    "MessageDelay": 5
+    "MessageDelay": 5,
+    "LogMessagesToDiscord": true,
+    "DiscordWebhook": ""
   }
 }
 ```

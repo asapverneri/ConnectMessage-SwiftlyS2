@@ -14,6 +14,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="MaxMind.GeoIP2" Version="5.2.0" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 		<PackageReference Include="SwiftlyS2.CS2" Version="1.0.5" ExcludeAssets="runtime" PrivateAssets="all" />
 	</ItemGroup>
 

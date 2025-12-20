@@ -8,15 +8,18 @@ using SwiftlyS2.Shared;
 using SwiftlyS2.Shared.GameEventDefinitions;
 using SwiftlyS2.Shared.Misc;
 using SwiftlyS2.Shared.Plugins;
+using System.Text;
 
 namespace ConnectMessage;
 
-[PluginMetadata(Id = "ConnectMessage", Version = "1.0.2", Name = "ConnectMessage", Author = "verneri", Description = "Connect/disconnect messages")]
+[PluginMetadata(Id = "ConnectMessage", Version = "1.0.3", Name = "ConnectMessage", Author = "verneri", Description = "Connect/disconnect messages")]
 public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
 
     private PluginConfig _config = null!;
 
-    public static Dictionary<ulong, bool> LoopConnections = new Dictionary<ulong, bool>();
+    private static Dictionary<ulong, bool> LoopConnections = new Dictionary<ulong, bool>();
+    private static readonly HttpClient _httpClient = new HttpClient();
+    private static readonly string _version = "v1.0.3";
 
     public override void Load(bool hotReload)
     {
@@ -60,6 +63,17 @@ public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
             LoopConnections.Remove(player.SteamID);
         }
 
+        Core.PlayerManager.SendChat(Core.Localizer["player.connect", playername, player.SteamID, country]);
+        Core.ConsoleOutput.WriteToServerConsole($"[ConnectMessage] Player {playername} connected ({country}/{playerip}/{player.SteamID})");
+
+        if (_config.LogMessagesToDiscord)
+        {
+            Task.Run(async () =>
+            {
+                await WebhookConnected(playername, player.SteamID, playerip, country);
+            });
+        }
+
         if (_config.WelcomeMessage)
         {
             Core.Scheduler.DelayBySeconds(_config.MessageDelay, () => {
@@ -67,9 +81,6 @@ public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
                 player.SendChat(Core.Localizer["welcome.message", playername]);
             });
         }
-
-        Core.PlayerManager.SendChat(Core.Localizer["player.connect", playername, country]);
-        Core.Logger.LogInformation($"Player {playername} connected ({country}/{playerip})");
 
         return HookResult.Continue;
     }
@@ -97,13 +108,78 @@ public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
             {
                 return HookResult.Continue;
             }
-
         }
 
-        Core.PlayerManager.SendChat(Core.Localizer["player.disconnect", playername, country]);
-        Core.Logger.LogInformation($"Player {playername} disconnected ({country}/{playerip})");
+        Core.PlayerManager.SendChat(Core.Localizer["player.disconnect", playername, player.SteamID, country]);
+        Core.ConsoleOutput.WriteToServerConsole($"[ConnectMessage] Player {playername} disconnected ({country}/{playerip}/{player.SteamID})");
 
+        if (_config.LogMessagesToDiscord)
+        {
+            Task.Run(async () =>
+            {
+                await WebhookDisconnected(playername, player.SteamID, playerip, country);
+            });
+        }
         return HookResult.Continue;
+    }
+
+    public async Task WebhookConnected(string playerName, ulong steamID, string playerip, string country)
+    {
+        var embed = new
+        {
+            title = $"{Core.Localizer["discord.connecttitle", playerName]}",
+            url = $"https://steamcommunity.com/profiles/{steamID}",
+            description = $"{Core.Localizer["discord.connectdescription", country, steamID, playerip]}",
+            color = 65280,
+            footer = new
+            {
+                text = $"{Core.Localizer["discord.footer", _version]}"
+            }
+        };
+
+        var payload = new
+        {
+            embeds = new[] { embed }
+        };
+
+        var jsonPayload = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+        var response = await _httpClient.PostAsync(_config.DiscordWebhook, content);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            Core.Logger.LogError($"Failed to send message to Discord! code: {response.StatusCode}");
+        }
+    }
+    public async Task WebhookDisconnected(string playerName, ulong steamID, string playerip, string country)
+    {
+        var embed = new
+        {
+            title = $"{Core.Localizer["discord.disconnecttitle", playerName]}",
+            url = $"https://steamcommunity.com/profiles/{steamID}",
+            description = $"{Core.Localizer["discord.disconnectdescription", country, steamID, playerip]}",
+            color = 16711680,
+            footer = new
+            {
+                text = $"{Core.Localizer["discord.footer", _version]}"
+            }
+        };
+
+        var payload = new
+        {
+            embeds = new[] { embed }
+        };
+
+        var jsonPayload = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+        var response = await _httpClient.PostAsync(_config.DiscordWebhook, content);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            Core.Logger.LogError($"Failed to send message to Discord! code: {response.StatusCode}");
+        }
     }
 
     private string GetCountry(string ipAddress)
