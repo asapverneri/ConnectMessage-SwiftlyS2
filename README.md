@@ -7,6 +7,7 @@
 <div align="center">
   <img src="https://img.shields.io/github/v/tag/asapverneri/ConnectMessage-SwiftlyS2?style=for-the-badge&label=Version" alt="GitHub tag (with filter)" />
   <img src="https://img.shields.io/github/last-commit/asapverneri/ConnectMessage-SwiftlyS2?style=for-the-badge" alt="Last Commit" />
+  <a href="https://discord.gg/tv44kYjZRe"> <img src="https://img.shields.io/badge/Discord-%235865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>
 </div>
 
 ---
@@ -41,7 +42,7 @@
 ## 📫 Contact
 
 <div align="center">
-  <a href="https://discordapp.com/users/367644530121637888">
+  <a href="https://discord.gg/tv44kYjZRe">
     <img src="https://img.shields.io/badge/Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" />
   </a>
   <a href="https://steamcommunity.com/id/vvernerii/">

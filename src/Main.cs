@@ -12,14 +12,14 @@ using System.Text;
 
 namespace ConnectMessage;
 
-[PluginMetadata(Id = "ConnectMessage", Version = "1.0.3", Name = "ConnectMessage", Author = "verneri", Description = "Connect/disconnect messages")]
+[PluginMetadata(Id = "ConnectMessage", Version = "1.0.4", Name = "ConnectMessage", Author = "verneri", Description = "Connect/disconnect messages")]
 public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
 
     private PluginConfig _config = null!;
 
     private static Dictionary<ulong, bool> LoopConnections = new Dictionary<ulong, bool>();
     private static readonly HttpClient _httpClient = new HttpClient();
-    private static readonly string _version = "v1.0.3";
+    private static readonly string _version = "v1.0.4";
 
     public override void Load(bool hotReload)
     {
