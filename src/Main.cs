@@ -6,25 +6,34 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SwiftlyS2.Shared;
 using SwiftlyS2.Shared.GameEventDefinitions;
-using SwiftlyS2.Shared.Misc;
 using SwiftlyS2.Shared.Plugins;
+using System.Reflection;
 using System.Text;
 
 namespace ConnectMessage;
 
-[PluginMetadata(Id = "ConnectMessage", Version = "1.0.4", Name = "ConnectMessage", Author = "verneri", Description = "Connect/disconnect messages")]
-public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
-
+[PluginMetadata(
+    Id = "ConnectMessage",
+    Version = "1.0.5",
+    Name = "ConnectMessage",
+    Author = "verneri",
+    Description = "Connect/disconnect messages (bots filtered)"
+)]
+public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core)
+{
     private PluginConfig _config = null!;
 
-    private static Dictionary<ulong, bool> LoopConnections = new Dictionary<ulong, bool>();
-    private static readonly HttpClient _httpClient = new HttpClient();
-    private static readonly string _version = "v1.0.4";
+    private static readonly Dictionary<ulong, bool> LoopConnections = new();
+    private static readonly HttpClient _httpClient = new();
+    private static DatabaseReader? _geoReader;
+
+    private const string Version = "v1.0.5";
 
     public override void Load(bool hotReload)
     {
         const string ConfigFileName = "config.jsonc";
         const string ConfigSection = "ConnectMessage";
+
         Core.Configuration
             .InitializeJsonWithModel<PluginConfig>(ConfigFileName, ConfigSection)
             .Configure(cfg => cfg.AddJsonFile(
@@ -32,162 +41,174 @@ public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
                 optional: false,
                 reloadOnChange: true));
 
-        ServiceCollection services = new();
+        var services = new ServiceCollection();
         services.AddSwiftly(Core)
             .AddOptionsWithValidateOnStart<PluginConfig>()
             .BindConfiguration(ConfigSection);
+
         var provider = services.BuildServiceProvider();
         _config = provider.GetRequiredService<IOptions<PluginConfig>>().Value;
+
+        // Initialize GeoIP reader once
+        var geoPath = Path.Combine(Core.PluginPath, "GeoLite2-Country.mmdb");
+        if (File.Exists(geoPath))
+            _geoReader = new DatabaseReader(geoPath);
 
         Core.GameEvent.HookPost<EventPlayerConnectFull>(OnPlayerConnectFull);
         Core.GameEvent.HookPost<EventPlayerDisconnect>(OnPlayerDisconnect);
     }
 
-    public override void Unload() {
-
+    public override void Unload()
+    {
+        _geoReader?.Dispose();
     }
 
-    private HookResult OnPlayerConnectFull(EventPlayerConnectFull @event)
+    // =============================
+    // CONNECT
+    // =============================
+
+    private SwiftlyS2.Shared.Misc.HookResult OnPlayerConnectFull(EventPlayerConnectFull @event)
     {
         if (@event == null)
-            return HookResult.Continue;
+            return SwiftlyS2.Shared.Misc.HookResult.Continue;
+
+        // Disable default join broadcast if supported
+        TrySetDontBroadcast(@event, true);
+
         var player = @event.Accessor.GetPlayer("userid");
         if (player == null || !player.IsValid)
-            return HookResult.Continue;
-        var playername = player.Controller.PlayerName;
-        string country = GetCountry(player.IPAddress?.Split(":")[0] ?? "Unknown");
-        string playerip = player.IPAddress?.Split(":")[0] ?? "Unknown";
+            return SwiftlyS2.Shared.Misc.HookResult.Continue;
 
-        if (LoopConnections.ContainsKey(player.SteamID))
-        {
-            LoopConnections.Remove(player.SteamID);
-        }
+        // Skip bots completely
+        if (IsBotPlayer(player))
+            return SwiftlyS2.Shared.Misc.HookResult.Continue;
 
-        Core.PlayerManager.SendChat(Core.Localizer["player.connect", playername, player.SteamID, country]);
-        Core.ConsoleOutput.WriteToServerConsole($"[ConnectMessage] Player {playername} connected ({country}/{playerip}/{player.SteamID})");
+        var name = player.Controller.PlayerName;
+        var ip = player.IPAddress?.Split(":")[0] ?? "Unknown";
+        var country = GetCountry(ip);
+
+        LoopConnections.Remove(player.SteamID);
+
+        Core.PlayerManager.SendChat(
+            Core.Localizer["player.connect", name, player.SteamID, country]);
+
+        Core.ConsoleOutput.WriteToServerConsole(
+            $"[ConnectMessage] {name} connected ({country}/{ip}/{player.SteamID})");
 
         if (_config.LogMessagesToDiscord)
-        {
-            Task.Run(async () =>
-            {
-                await WebhookConnected(playername, player.SteamID, playerip, country);
-            });
-        }
+            _ = WebhookConnected(name, player.SteamID, ip, country);
 
         if (_config.WelcomeMessage)
         {
-            Core.Scheduler.DelayBySeconds(_config.MessageDelay, () => {
-
-                player.SendChat(Core.Localizer["welcome.message", playername]);
+            Core.Scheduler.DelayBySeconds(_config.MessageDelay, () =>
+            {
+                if (player != null && player.IsValid)
+                    player.SendChat(Core.Localizer["welcome.message", name]);
             });
         }
 
-        return HookResult.Continue;
+        return SwiftlyS2.Shared.Misc.HookResult.Continue;
     }
-    private HookResult OnPlayerDisconnect(EventPlayerDisconnect @event)
+
+    // =============================
+    // DISCONNECT
+    // =============================
+
+    private SwiftlyS2.Shared.Misc.HookResult OnPlayerDisconnect(EventPlayerDisconnect @event)
     {
         if (@event == null)
-            return HookResult.Continue;
-
-        var player = @event.Accessor.GetPlayer("userid");
-        if (player == null || !player.IsValid)
-            return HookResult.Continue;
-        var playername = player.Controller.PlayerName;
-        string country = GetCountry(player.IPAddress?.Split(":")[0] ?? "Unknown");
-        string playerip = player.IPAddress?.Split(":")[0] ?? "Unknown";
+            return SwiftlyS2.Shared.Misc.HookResult.Continue;
 
         @event.DontBroadcast = true;
 
-        if (@event.Reason == 54 || @event.Reason == 55 || @event.Reason == 57)
+        var player = @event.Accessor.GetPlayer("userid");
+        if (player == null || !player.IsValid)
+            return SwiftlyS2.Shared.Misc.HookResult.Continue;
+
+        // Skip bots completely
+        if (IsBotPlayer(player))
+            return SwiftlyS2.Shared.Misc.HookResult.Continue;
+
+        var name = player.Controller.PlayerName;
+        var ip = player.IPAddress?.Split(":")[0] ?? "Unknown";
+        var country = GetCountry(ip);
+
+        // Prevent reconnect spam
+        if (@event.Reason is 54 or 55 or 57)
         {
-            if (!LoopConnections.ContainsKey(player.SteamID))
-            {
-                LoopConnections.Add(player.SteamID, true);
-            }
-            if (LoopConnections.ContainsKey(player.SteamID))
-            {
-                return HookResult.Continue;
-            }
+            LoopConnections[player.SteamID] = true;
+            return SwiftlyS2.Shared.Misc.HookResult.Continue;
         }
 
-        Core.PlayerManager.SendChat(Core.Localizer["player.disconnect", playername, player.SteamID, country]);
-        Core.ConsoleOutput.WriteToServerConsole($"[ConnectMessage] Player {playername} disconnected ({country}/{playerip}/{player.SteamID})");
+        Core.PlayerManager.SendChat(
+            Core.Localizer["player.disconnect", name, player.SteamID, country]);
+
+        Core.ConsoleOutput.WriteToServerConsole(
+            $"[ConnectMessage] {name} disconnected ({country}/{ip}/{player.SteamID})");
 
         if (_config.LogMessagesToDiscord)
-        {
-            Task.Run(async () =>
-            {
-                await WebhookDisconnected(playername, player.SteamID, playerip, country);
-            });
-        }
-        return HookResult.Continue;
+            _ = WebhookDisconnected(name, player.SteamID, ip, country);
+
+        return SwiftlyS2.Shared.Misc.HookResult.Continue;
     }
 
-    public async Task WebhookConnected(string playerName, ulong steamID, string playerip, string country)
+    // =============================
+    // DISCORD WEBHOOKS
+    // =============================
+
+    private async Task WebhookConnected(string name, ulong steamId, string ip, string country)
     {
         var embed = new
         {
-            title = $"{Core.Localizer["discord.connecttitle", playerName]}",
-            url = $"https://steamcommunity.com/profiles/{steamID}",
-            description = $"{Core.Localizer["discord.connectdescription", country, steamID, playerip]}",
+            title = $"{Core.Localizer["discord.connecttitle", name]}",
+            url = $"https://steamcommunity.com/profiles/{steamId}",
+            description = $"{Core.Localizer["discord.connectdescription", country, steamId, ip]}",
             color = 65280,
-            footer = new
-            {
-                text = $"{Core.Localizer["discord.footer", _version]}"
-            }
+            footer = new { text = $"ConnectMessage {Version}" }
         };
 
-        var payload = new
-        {
-            embeds = new[] { embed }
-        };
-
-        var jsonPayload = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-        var response = await _httpClient.PostAsync(_config.DiscordWebhook, content);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            Core.Logger.LogError($"Failed to send message to Discord! code: {response.StatusCode}");
-        }
+        await SendWebhook(embed);
     }
-    public async Task WebhookDisconnected(string playerName, ulong steamID, string playerip, string country)
+
+    private async Task WebhookDisconnected(string name, ulong steamId, string ip, string country)
     {
         var embed = new
         {
-            title = $"{Core.Localizer["discord.disconnecttitle", playerName]}",
-            url = $"https://steamcommunity.com/profiles/{steamID}",
-            description = $"{Core.Localizer["discord.disconnectdescription", country, steamID, playerip]}",
+            title = $"{Core.Localizer["discord.disconnecttitle", name]}",
+            url = $"https://steamcommunity.com/profiles/{steamId}",
+            description = $"{Core.Localizer["discord.disconnectdescription", country, steamId, ip]}",
             color = 16711680,
-            footer = new
-            {
-                text = $"{Core.Localizer["discord.footer", _version]}"
-            }
+            footer = new { text = $"ConnectMessage {Version}" }
         };
 
-        var payload = new
-        {
-            embeds = new[] { embed }
-        };
+        await SendWebhook(embed);
+    }
 
-        var jsonPayload = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+    private async Task SendWebhook(object embed)
+    {
+        var payload = new { embeds = new[] { embed } };
+
+        var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         var response = await _httpClient.PostAsync(_config.DiscordWebhook, content);
 
         if (!response.IsSuccessStatusCode)
-        {
-            Core.Logger.LogError($"Failed to send message to Discord! code: {response.StatusCode}");
-        }
+            Core.Logger.LogError($"Discord webhook failed: {response.StatusCode}");
     }
 
-    private string GetCountry(string ipAddress)
+    // =============================
+    // GEOIP
+    // =============================
+
+    private string GetCountry(string ip)
     {
         try
         {
-            using var reader = new DatabaseReader(Path.Combine(Core.PluginPath, "GeoLite2-Country.mmdb"));
-            var response = reader.Country(ipAddress);
+            if (_geoReader == null)
+                return "Unknown";
+
+            var response = _geoReader.Country(ip);
             return response?.Country?.IsoCode ?? "Unknown";
         }
         catch (AddressNotFoundException)
@@ -199,4 +220,49 @@ public partial class ConnectMessage(ISwiftlyCore core) : BasePlugin(core) {
             return "Unknown";
         }
     }
-} 
+
+    // =============================
+    // BOT DETECTION (reflection safe)
+    // =============================
+
+    private static bool IsBotPlayer(object player)
+    {
+        try
+        {
+            if (TryBool(player, "IsBot")) return true;
+            if (TryBool(player, "IsFakeClient")) return true;
+
+            var controller = TryObj(player, "Controller");
+            if (controller != null)
+            {
+                if (TryBool(controller, "IsBot")) return true;
+                if (TryBool(controller, "IsFakeClient")) return true;
+            }
+
+            var steamProp = player.GetType().GetProperty("SteamID");
+            if (steamProp?.GetValue(player) is ulong id && id == 0)
+                return true;
+        }
+        catch { }
+
+        return false;
+    }
+
+    private static bool TryBool(object obj, string name)
+    {
+        var p = obj.GetType().GetProperty(name);
+        return p != null && p.PropertyType == typeof(bool) && (bool)p.GetValue(obj)!;
+    }
+
+    private static object? TryObj(object obj, string name)
+    {
+        return obj.GetType().GetProperty(name)?.GetValue(obj);
+    }
+
+    private static void TrySetDontBroadcast(object evt, bool value)
+    {
+        var p = evt.GetType().GetProperty("DontBroadcast");
+        if (p != null && p.PropertyType == typeof(bool))
+            p.SetValue(evt, value);
+    }
+}
